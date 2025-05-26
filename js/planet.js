@@ -23,11 +23,18 @@ class Planet {
         this.ships = 0;
         this.owner = owner;
         
+        // Assign random letter for keyboard shortcuts
+        this.letter = this.generateRandomLetter();
+        
         // Visual properties
         this.radius = CONFIG.getPlanetRadius(capacity);
         this.visualElement = null;
         this.textElement = null;
         this.capacityTextElement = null;
+        this.letterElement = null;
+        
+        // Selection state
+        this.isSelected = false;
         
         // Conquest state
         this.isBeingConquered = false;
@@ -58,6 +65,15 @@ class Planet {
     }
 
     /**
+     * Generate random letter for planet identification
+     * @returns {string} Random letter A-Z
+     */
+    generateRandomLetter() {
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        return letters[Math.floor(Math.random() * letters.length)];
+    }
+
+    /**
      * Create SVG visual elements for the planet
      */
     createElement() {
@@ -67,7 +83,8 @@ class Planet {
         // Create planet group
         this.visualElement = Utils.createSVGElement('g', {
             'class': 'planet planet-hover',
-            'data-planet-id': this.getId()
+            'data-planet-id': this.getId(),
+            'data-planet-letter': this.letter
         });
 
         // Create planet circle
@@ -109,11 +126,25 @@ class Planet {
         });
         this.capacityTextElement.textContent = `[${this.capacity}]`;
 
+        // Create letter identification text
+        this.letterElement = Utils.createSVGElement('text', {
+            x: this.x,
+            y: this.y - this.radius - 10,
+            'class': 'planet-letter-text',
+            'text-anchor': 'middle',
+            'font-size': '14px',
+            'font-weight': 'bold',
+            'fill': '#ffffff',
+            'opacity': '0.8'
+        });
+        this.letterElement.textContent = this.letter;
+
         // Add elements to group
         this.visualElement.appendChild(this.planetCircle);
         this.visualElement.appendChild(this.conquestProgress);
         this.visualElement.appendChild(this.textElement);
         this.visualElement.appendChild(this.capacityTextElement);
+        this.visualElement.appendChild(this.letterElement);
 
         // Add to canvas
         canvas.appendChild(this.visualElement);
@@ -140,6 +171,10 @@ class Planet {
         this.visualElement.addEventListener('mousedown', (e) => {
             this.onMouseDown(e);
         });
+
+        this.visualElement.addEventListener('click', (e) => {
+            this.onClick(e);
+        });
     }
 
     /**
@@ -157,6 +192,12 @@ class Planet {
 
         // Add hover animation
         this.visualElement.classList.add('planet-hover');
+        
+        // Highlight letter
+        if (this.letterElement) {
+            this.letterElement.setAttribute('opacity', '1.0');
+            this.letterElement.setAttribute('font-size', '16px');
+        }
     }
 
     /**
@@ -171,15 +212,70 @@ class Planet {
 
         // Remove hover animation
         this.visualElement.classList.remove('planet-hover');
+        
+        // Reset letter highlight
+        if (this.letterElement && !this.isSelected) {
+            this.letterElement.setAttribute('opacity', '0.8');
+            this.letterElement.setAttribute('font-size', '14px');
+        }
     }
 
     /**
      * Handle mouse down event (start of potential drag)
      */
     onMouseDown(event) {
+        // Prevent event bubbling
+        event.stopPropagation();
+        
         // Notify game engine about potential drag start
         if (window.game && typeof window.game.onPlanetMouseDown === 'function') {
             window.game.onPlanetMouseDown(this, event);
+        }
+    }
+
+    /**
+     * Handle click event for selection
+     */
+    onClick(event) {
+        event.stopPropagation();
+        
+        // Notify game engine about planet selection
+        if (window.game && typeof window.game.onPlanetClick === 'function') {
+            window.game.onPlanetClick(this, event);
+        }
+    }
+
+    /**
+     * Select this planet
+     */
+    select() {
+        this.isSelected = true;
+        this.planetCircle.setAttribute('stroke', '#ffffff');
+        this.planetCircle.setAttribute('stroke-width', '3');
+        this.planetCircle.setAttribute('stroke-dasharray', '5,5');
+        
+        // Highlight letter
+        if (this.letterElement) {
+            this.letterElement.setAttribute('opacity', '1.0');
+            this.letterElement.setAttribute('font-size', '18px');
+            this.letterElement.setAttribute('fill', '#ffff00');
+        }
+    }
+
+    /**
+     * Deselect this planet
+     */
+    deselect() {
+        this.isSelected = false;
+        this.planetCircle.setAttribute('stroke', 'none');
+        this.planetCircle.setAttribute('stroke-width', CONFIG.PLANET.STROKE_WIDTH);
+        this.planetCircle.setAttribute('stroke-dasharray', 'none');
+        
+        // Reset letter
+        if (this.letterElement) {
+            this.letterElement.setAttribute('opacity', '0.8');
+            this.letterElement.setAttribute('font-size', '14px');
+            this.letterElement.setAttribute('fill', '#ffffff');
         }
     }
 
@@ -432,21 +528,22 @@ class Planet {
      */
     getTooltipInfo() {
         const ownerText = this.owner === 'neutral' ? 'Neutral' : 
-                         this.owner === 'player' ? 'Your Planet' : 'AI Planet';
+                         this.owner === 'player' ? 'Tu Planeta' : 'Planeta IA';
         
         let statusText = '';
         if (this.isBeingConquered) {
             const progress = Math.round(this.conquestTimer.getProgress() * 100);
-            statusText = `<br><span style="color: #ffaa00;">Conquering... ${progress}%</span>`;
+            statusText = `<br><span style="color: #ffaa00;">Conquistando... ${progress}%</span>`;
         } else if (this.isInBattle) {
-            statusText = `<br><span style="color: #ff4444;">Under Attack!</span>`;
+            statusText = `<br><span style="color: #ff4444;">¡Bajo Ataque!</span>`;
         }
         
         return `
-            <div class="tooltip-title">${ownerText}</div>
+            <div class="tooltip-title">${ownerText} - ${this.letter}</div>
             <div class="tooltip-info">
-                Ships: ${this.ships}/${this.capacity}<br>
-                Generation: ${this.shipGenerationRate.toFixed(1)}/sec
+                Naves: ${this.ships}/${this.capacity}<br>
+                Generación: ${this.shipGenerationRate.toFixed(1)}/sec<br>
+                Tecla: <strong>${this.letter}</strong>
                 ${statusText}
             </div>
         `;
@@ -458,6 +555,14 @@ class Planet {
      */
     getId() {
         return `planet_${this.x}_${this.y}`;
+    }
+
+    /**
+     * Get planet letter
+     * @returns {string} Planet letter
+     */
+    getLetter() {
+        return this.letter;
     }
 
     /**
