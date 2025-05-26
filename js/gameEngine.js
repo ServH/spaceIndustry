@@ -31,8 +31,10 @@ class GameEngine {
             dragSourcePlanet: null,  // Planet where drag started
             dragLine: null,
             isDragging: false,
-            dragThreshold: 8,
-            dragStarted: false
+            dragThreshold: 5,  // Reduced threshold for smoother experience
+            dragStarted: false,
+            preventTooltip: false,  // Flag to prevent tooltip during drag operations
+            lastMousePos: null
         };
         
         // Keyboard system (unchanged)
@@ -42,11 +44,13 @@ class GameEngine {
             planetMap: new Map()
         };
         
-        // Tooltip control
+        // Tooltip control - completely separate from drag system
         this.tooltipState = {
             isVisible: false,
             hoveredPlanet: null,
-            hideTimer: null
+            hoverTimer: null,
+            showDelay: 200,  // Reduced delay for better responsiveness
+            element: null
         };
         
         // Game statistics
@@ -100,35 +104,37 @@ class GameEngine {
         canvas.setAttribute('width', this.canvasWidth);
         canvas.setAttribute('height', this.canvasHeight);
         canvas.setAttribute('viewBox', `0 0 ${this.canvasWidth} ${this.canvasHeight}`);
+        
+        // Set cursor style
+        canvas.style.cursor = 'crosshair';
     }
 
-    // RTS-STYLE INPUT HANDLERS - NO CLICKS, PURE DRAG & DROP
+    // RTS-STYLE INPUT HANDLERS - COMPLETELY REDESIGNED
     setupInputHandlers() {
         if (!this.canvas) return;
         
-        // Mouse events - RTS style
+        // Mouse events with proper event delegation and prevention
         this.canvas.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.onMouseDown(e);
-        }, { passive: false });
+            this.onCanvasMouseDown(e);
+        }, { capture: true });
         
         this.canvas.addEventListener('mousemove', (e) => {
-            e.preventDefault();
-            this.onMouseMove(e);
-        }, { passive: false });
+            this.onCanvasMouseMove(e);
+        }, { capture: false });
         
         this.canvas.addEventListener('mouseup', (e) => {
-            e.preventDefault();
-            this.onMouseUp(e);
-        }, { passive: false });
+            this.onCanvasMouseUp(e);
+        }, { capture: true });
         
         this.canvas.addEventListener('mouseleave', (e) => {
-            this.onMouseLeave(e);
+            this.onCanvasMouseLeave(e);
         });
         
         // Disable context menu
-        this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        this.canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
         
         // Keyboard events (unchanged)
         document.addEventListener('keydown', (e) => this.onKeyDown(e));
@@ -141,15 +147,20 @@ class GameEngine {
         });
     }
 
-    // RTS MOUSE HANDLERS - Pure drag and drop experience
-    onMouseDown(event) {
+    // MAIN CANVAS EVENT HANDLERS - Handle all mouse interactions here
+    onCanvasMouseDown(event) {
         if (this.gameState !== 'playing') return;
+        
+        // Always prevent default and stop propagation on mouse down
+        event.preventDefault();
+        event.stopPropagation();
         
         const pos = Utils.getMousePosition(event, this.canvas);
         const planet = this.getPlanetAtPosition(pos.x, pos.y);
         
-        // Hide tooltip immediately when starting drag
+        // Immediately hide any visible tooltip and prevent new ones
         this.hideTooltip();
+        this.inputState.preventTooltip = true;
         
         // Reset drag state
         this.inputState.mouseDown = true;
@@ -158,27 +169,29 @@ class GameEngine {
         this.inputState.isDragging = false;
         this.inputState.dragStarted = false;
         this.inputState.dragSourcePlanet = null;
+        this.inputState.lastMousePos = pos;
         
-        // Only allow drag from valid planets
+        // Only prepare drag from valid planets
         if (planet && planet.owner === 'player' && planet.ships > 0) {
             this.inputState.dragSourcePlanet = planet;
-            // Don't select the planet yet - wait for drag to start
             Utils.debugLog('DRAG_READY', `Ready to drag from planet ${planet.getLetter()}`);
         } else {
-            Utils.debugLog('DRAG_INVALID', planet ? 
-                `Cannot drag from ${planet.getLetter()} (owner: ${planet.owner}, ships: ${planet.ships})` : 
-                'No planet at mouse position'
-            );
+            // For keyboard compatibility, still handle click on planets
+            if (planet) {
+                this.handlePlanetClickForKeyboard(planet);
+            }
         }
     }
 
-    onMouseMove(event) {
+    onCanvasMouseMove(event) {
         if (this.gameState !== 'playing') return;
         
+        event.preventDefault();
         const pos = Utils.getMousePosition(event, this.canvas);
+        this.inputState.lastMousePos = pos;
         
         if (this.inputState.mouseDown && this.inputState.dragSourcePlanet) {
-            // Update drag position
+            // Handle dragging
             this.inputState.dragCurrent = pos;
             
             // Check if we should start dragging
@@ -197,20 +210,21 @@ class GameEngine {
             if (this.inputState.isDragging) {
                 this.updateDragLine();
             }
-        } else {
-            // Handle hover for tooltips only when not dragging
-            if (!this.inputState.isDragging) {
-                this.handleMouseHover(pos);
-            }
+        } else if (!this.inputState.mouseDown && !this.inputState.preventTooltip) {
+            // Handle hover for tooltips only when not dragging or mouse is not down
+            this.handleMouseHover(pos);
         }
     }
 
-    onMouseUp(event) {
+    onCanvasMouseUp(event) {
         if (this.gameState !== 'playing') return;
+        
+        event.preventDefault();
+        event.stopPropagation();
         
         const pos = Utils.getMousePosition(event, this.canvas);
         
-        // Only process if we were actually dragging
+        // Process drag completion if we were dragging
         if (this.inputState.isDragging && this.inputState.dragSourcePlanet) {
             const targetPlanet = this.getPlanetAtPosition(pos.x, pos.y);
             
@@ -225,18 +239,20 @@ class GameEngine {
         // Reset drag state
         this.resetDragState();
         
-        // Re-enable tooltips after a short delay
+        // Allow tooltips again after a brief delay
         setTimeout(() => {
-            if (!this.inputState.isDragging) {
-                const currentPos = Utils.getMousePosition(event, this.canvas);
-                this.handleMouseHover(currentPos);
+            this.inputState.preventTooltip = false;
+            // Check if mouse is still over something
+            if (this.inputState.lastMousePos) {
+                this.handleMouseHover(this.inputState.lastMousePos);
             }
-        }, 100);
+        }, 150);
     }
 
-    onMouseLeave(event) {
+    onCanvasMouseLeave(event) {
         this.resetDragState();
         this.hideTooltip();
+        this.inputState.preventTooltip = false;
     }
 
     startDragging() {
@@ -248,8 +264,9 @@ class GameEngine {
             this.inputState.dragSourcePlanet.select();
         }
         
-        // Hide any visible tooltips
+        // Ensure tooltip is hidden and stays hidden
         this.hideTooltip();
+        this.inputState.preventTooltip = true;
         
         // Change cursor to indicate dragging
         this.canvas.style.cursor = 'grabbing';
@@ -271,7 +288,8 @@ class GameEngine {
             y1: this.inputState.dragSourcePlanet.y,
             x2: this.inputState.dragCurrent.x,
             y2: this.inputState.dragCurrent.y,
-            'class': 'drag-line'
+            'class': 'drag-line',
+            'pointer-events': 'none'  // Prevent interference
         });
         
         this.canvas.appendChild(this.inputState.dragLine);
@@ -301,8 +319,12 @@ class GameEngine {
         this.inputState.dragStarted = false;
     }
 
-    // IMPROVED TOOLTIP HANDLING - No interference with dragging
+    // COMPLETELY REDESIGNED TOOLTIP SYSTEM - NO INTERFERENCE
     handleMouseHover(pos) {
+        if (this.inputState.preventTooltip || this.inputState.mouseDown) {
+            return;
+        }
+        
         const planet = this.getPlanetAtPosition(pos.x, pos.y);
         
         if (planet !== this.tooltipState.hoveredPlanet) {
@@ -314,41 +336,45 @@ class GameEngine {
             
             if (planet) {
                 // Show tooltip after delay
-                this.tooltipState.hideTimer = setTimeout(() => {
-                    if (this.tooltipState.hoveredPlanet === planet && !this.inputState.isDragging) {
+                this.tooltipState.hoverTimer = setTimeout(() => {
+                    if (this.tooltipState.hoveredPlanet === planet && 
+                        !this.inputState.isDragging && 
+                        !this.inputState.preventTooltip) {
                         this.showTooltip(planet, pos);
                     }
-                }, 300); // 300ms delay
+                }, this.tooltipState.showDelay);
             }
         }
     }
 
     showTooltip(planet, pos) {
+        if (this.inputState.isDragging || this.inputState.preventTooltip) return;
+        
         const tooltip = Utils.getElementById('tooltip');
-        if (!tooltip || this.inputState.isDragging) return;
+        if (!tooltip) return;
         
         const info = this.getTooltipInfo(planet);
         tooltip.innerHTML = info;
         tooltip.className = `tooltip tooltip-${planet.owner}`;
         
-        // Position tooltip away from cursor to avoid interference
+        // Position tooltip away from cursor and planet to prevent interference
         const canvasRect = this.canvas.getBoundingClientRect();
-        let x = planet.x + canvasRect.left + planet.radius + 25;
-        let y = planet.y + canvasRect.top - 25;
+        let x = planet.x + canvasRect.left + planet.radius + 30;
+        let y = planet.y + canvasRect.top - 30;
         
         // Adjust if tooltip would go off screen
-        const tooltipRect = tooltip.getBoundingClientRect();
-        if (x + 200 > window.innerWidth) { // Estimated tooltip width
-            x = planet.x + canvasRect.left - 225;
+        if (x + 220 > window.innerWidth) { // Estimated tooltip width
+            x = planet.x + canvasRect.left - 250;
         }
-        if (y < 0) {
-            y = planet.y + canvasRect.top + planet.radius + 25;
+        if (y < 10) {
+            y = planet.y + canvasRect.top + planet.radius + 30;
         }
         
         tooltip.style.left = `${x}px`;
         tooltip.style.top = `${y}px`;
         tooltip.style.display = 'block';
-        tooltip.style.pointerEvents = 'none'; // Prevent interference
+        tooltip.style.pointerEvents = 'none'; // Critical: prevent all mouse interference
+        tooltip.style.zIndex = '1000';
         
         this.tooltipState.isVisible = true;
     }
@@ -359,9 +385,9 @@ class GameEngine {
             tooltip.style.display = 'none';
         }
         
-        if (this.tooltipState.hideTimer) {
-            clearTimeout(this.tooltipState.hideTimer);
-            this.tooltipState.hideTimer = null;
+        if (this.tooltipState.hoverTimer) {
+            clearTimeout(this.tooltipState.hoverTimer);
+            this.tooltipState.hoverTimer = null;
         }
         
         this.tooltipState.isVisible = false;
@@ -396,12 +422,21 @@ class GameEngine {
             const planet = this.planets[i];
             const distance = Utils.distance(x, y, planet.x, planet.y);
             
-            // Reasonable hit area - not too large to avoid conflicts
-            if (distance <= planet.radius + 5) {
+            // Reasonable hit area - consistent with visual representation
+            if (distance <= planet.radius + 8) {
                 return planet;
             }
         }
         return null;
+    }
+
+    // KEYBOARD COMPATIBILITY - Handle planet clicks for keyboard mode
+    handlePlanetClickForKeyboard(planet) {
+        if (this.keyboardState.awaitingTarget) {
+            this.executeKeyboardAttack(planet);
+        } else if (planet.owner === 'player' && planet.ships > 0) {
+            this.selectPlanetKeyboard(planet);
+        }
     }
 
     // KEYBOARD HANDLERS (unchanged)
@@ -473,21 +508,15 @@ class GameEngine {
         this.keyboardState.awaitingTarget = false;
     }
 
-    // PLANET INTERACTION FROM PLANET CLASS
+    // PLANET INTERACTION COMPATIBILITY METHODS
     onPlanetClick(planet, event) {
-        if (this.gameState !== 'playing') return;
-        
-        // Only handle keyboard interactions through clicks
-        if (this.keyboardState.awaitingTarget) {
-            this.executeKeyboardAttack(planet);
-        } else if (planet.owner === 'player' && planet.ships > 0) {
-            this.selectPlanetKeyboard(planet);
-        }
+        // Only used for keyboard mode now
+        this.handlePlanetClickForKeyboard(planet);
     }
 
     onPlanetMouseDown(planet, event) {
-        // RTS-style dragging is handled in main mouse handlers
-        // This method exists for compatibility
+        // All mouse interactions are now handled by canvas events
+        // This method exists for compatibility but does nothing
     }
 
     // FLEET LAUNCHING
@@ -770,6 +799,10 @@ class GameEngine {
             keyboardState: {
                 selectedPlanet: this.keyboardState.selectedPlanet ? this.keyboardState.selectedPlanet.getLetter() : null,
                 awaitingTarget: this.keyboardState.awaitingTarget
+            },
+            performanceStats: {
+                updateTime: 0,
+                renderTime: 0
             }
         };
     }
