@@ -101,6 +101,24 @@ body {
 .planet-capacity-text {
     font-size: 10px;
     fill: rgba(255, 255, 255, 0.7);
+    pointer-events: none;
+}
+
+.planet-letter-text {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: bold;
+    text-anchor: middle;
+    dominant-baseline: central;
+    fill: #ffffff;
+    opacity: 0.8;
+    pointer-events: none;
+    transition: all 0.2s ease;
+}
+
+.planet-letter-text:hover {
+    opacity: 1.0;
+    font-size: 16px;
 }
 
 /* Conquest Progress */
@@ -125,6 +143,42 @@ body {
     fill: url(#neutralGradient);
 }
 
+/* Selection Highlights */
+.planet-selected-keyboard {
+    stroke: #ffff00;
+    stroke-width: 3;
+    stroke-dasharray: 5,5;
+    animation: selectionPulse 1s ease-in-out infinite alternate;
+}
+
+.planet-awaiting-target {
+    stroke: #00ff88;
+    stroke-width: 2;
+    stroke-dasharray: 3,3;
+    animation: targetPulse 0.5s ease-in-out infinite alternate;
+}
+
+/* Selection animations */
+@keyframes selectionPulse {
+    0% {
+        stroke-opacity: 0.6;
+        stroke-width: 3;
+    }
+    100% {
+        stroke-opacity: 1.0;
+        stroke-width: 4;
+    }
+}
+
+@keyframes targetPulse {
+    0% {
+        stroke-opacity: 0.4;
+    }
+    100% {
+        stroke-opacity: 0.8;
+    }
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .planet-text {
@@ -133,6 +187,10 @@ body {
     
     .planet-capacity-text {
         font-size: 8px;
+    }
+    
+    .planet-letter-text {
+        font-size: 12px;
     }
     
     .ui-overlay {
@@ -148,5 +206,9 @@ body {
     
     .planet-capacity-text {
         font-size: 7px;
+    }
+    
+    .planet-letter-text {
+        font-size: 10px;
     }
 }
