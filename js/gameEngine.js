@@ -35,6 +35,13 @@ class GameEngine {
             dragLine: null
         };
         
+        // Keyboard selection system
+        this.keyboardState = {
+            selectedPlanet: null,
+            awaitingTarget: false,
+            planetMap: new Map() // letter -> planet mapping
+        };
+        
         // Game statistics
         this.gameStats = {
             gameStartTime: 0,
@@ -83,6 +90,9 @@ class GameEngine {
         // Generate game world
         this.generateWorld();
         
+        // Setup keyboard mappings
+        this.setupKeyboardMappings();
+        
         // Start game
         this.startGame();
         
@@ -129,6 +139,13 @@ class GameEngine {
         
         // Context menu disable
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        
+        // Keyboard events for planet selection
+        document.addEventListener('keydown', (e) => this.onKeyDown(e));
+        document.addEventListener('keyup', (e) => this.onKeyUp(e));
+        
+        // Global click to deselect
+        document.addEventListener('click', (e) => this.onDocumentClick(e));
     }
 
     /**
@@ -172,6 +189,20 @@ class GameEngine {
         }
         
         Utils.debugLog('WORLD_GEN', `Generated ${this.planets.length} planets`);
+    }
+
+    /**
+     * Setup keyboard mappings for planets
+     */
+    setupKeyboardMappings() {
+        this.keyboardState.planetMap.clear();
+        
+        // Create mapping of letters to planets
+        this.planets.forEach(planet => {
+            this.keyboardState.planetMap.set(planet.getLetter().toLowerCase(), planet);
+        });
+        
+        Utils.debugLog('KEYBOARD', 'Planet keyboard mappings created:', Array.from(this.keyboardState.planetMap.keys()));
     }
 
     /**
@@ -234,6 +265,15 @@ class GameEngine {
         
         // Start game loop
         this.gameLoopId = requestAnimationFrame((timestamp) => this.gameLoop(timestamp));
+        
+        // Show instruction notification
+        if (this.uiController) {
+            this.uiController.showNotification(
+                'Arrastra desde tus planetas o usa las teclas de las letras para seleccionar',
+                'info',
+                4000
+            );
+        }
         
         Utils.debugLog('GAME_START', 'Game started');
     }
@@ -373,10 +413,167 @@ class GameEngine {
             this.gameLoopId = null;
         }
         
+        // Clear selections
+        this.clearAllSelections();
+        
         // Show game over modal
         this.uiController.showGameOverModal(result, this.gameStats);
         
         Utils.debugLog('GAME_END', `Game ended: ${result}`);
+    }
+
+    /**
+     * Handle keyboard input
+     * @param {KeyboardEvent} event - Keyboard event
+     */
+    onKeyDown(event) {
+        if (this.gameState !== 'playing') return;
+        
+        const key = event.key.toLowerCase();
+        
+        // Check if it's a planet selection key
+        if (this.keyboardState.planetMap.has(key)) {
+            const planet = this.keyboardState.planetMap.get(key);
+            
+            if (this.keyboardState.awaitingTarget) {
+                // Execute attack on target planet
+                this.executeKeyboardAttack(planet);
+            } else {
+                // Select planet as source
+                this.selectPlanetKeyboard(planet);
+            }
+            
+            event.preventDefault();
+            return;
+        }
+        
+        // Special keys
+        switch (key) {
+            case 'escape':
+                this.clearAllSelections();
+                event.preventDefault();
+                break;
+                
+            case ' ':
+                // Spacebar to deselect
+                this.clearAllSelections();
+                event.preventDefault();
+                break;
+        }
+    }
+
+    /**
+     * Handle key up events
+     * @param {KeyboardEvent} event - Keyboard event
+     */
+    onKeyUp(event) {
+        // Reserved for future use
+    }
+
+    /**
+     * Select planet via keyboard
+     * @param {Planet} planet - Planet to select
+     */
+    selectPlanetKeyboard(planet) {
+        // Can only select player planets with ships
+        if (planet.owner !== 'player' || planet.ships === 0) {
+            this.uiController.showNotification(
+                'Solo puedes seleccionar tus planetas con naves',
+                'warning',
+                2000
+            );
+            return;
+        }
+        
+        // Clear previous selections
+        this.clearAllSelections();
+        
+        // Select planet
+        this.keyboardState.selectedPlanet = planet;
+        this.keyboardState.awaitingTarget = true;
+        planet.select();
+        
+        // Show status
+        this.uiController.showNotification(
+            `Planeta ${planet.getLetter()} seleccionado. Presiona otra tecla para atacar.`,
+            'info',
+            3000
+        );
+        
+        Utils.debugLog('KEYBOARD_SELECT', `Planet ${planet.getLetter()} selected`);
+    }
+
+    /**
+     * Execute keyboard attack
+     * @param {Planet} targetPlanet - Target planet
+     */
+    executeKeyboardAttack(targetPlanet) {
+        const sourcePlanet = this.keyboardState.selectedPlanet;
+        
+        if (!sourcePlanet) return;
+        
+        // Can't attack self
+        if (sourcePlanet === targetPlanet) {
+            this.uiController.showNotification(
+                'No puedes atacar el mismo planeta',
+                'warning',
+                2000
+            );
+            return;
+        }
+        
+        // Execute attack
+        this.handleFleetLaunch(sourcePlanet, targetPlanet);
+        
+        // Clear selections
+        this.clearAllSelections();
+        
+        Utils.debugLog('KEYBOARD_ATTACK', `Attack from ${sourcePlanet.getLetter()} to ${targetPlanet.getLetter()}`);
+    }
+
+    /**
+     * Clear all selections
+     */
+    clearAllSelections() {
+        // Clear keyboard selection
+        if (this.keyboardState.selectedPlanet) {
+            this.keyboardState.selectedPlanet.deselect();
+        }
+        this.keyboardState.selectedPlanet = null;
+        this.keyboardState.awaitingTarget = false;
+        
+        // Clear mouse selection
+        this.resetInputState();
+    }
+
+    /**
+     * Handle document click for deselection
+     * @param {MouseEvent} event - Click event
+     */
+    onDocumentClick(event) {
+        // Only clear if clicking outside canvas or on empty space
+        if (!this.canvas.contains(event.target)) {
+            this.clearAllSelections();
+        }
+    }
+
+    /**
+     * Handle planet click
+     * @param {Planet} planet - Clicked planet
+     * @param {MouseEvent} event - Mouse event
+     */
+    onPlanetClick(planet, event) {
+        if (this.gameState !== 'playing') return;
+        
+        event.stopPropagation();
+        
+        if (this.keyboardState.awaitingTarget) {
+            // Execute keyboard attack
+            this.executeKeyboardAttack(planet);
+        } else if (planet.owner === 'player' && planet.ships > 0) {
+            // Select planet
+            this.selectPlanetKeyboard(planet);
+        }
     }
 
     /**
@@ -393,9 +590,15 @@ class GameEngine {
         this.inputState.dragStart = pos;
         this.inputState.selectedPlanet = planet;
         
+        // Clear keyboard selection when starting mouse interaction
+        if (this.keyboardState.selectedPlanet) {
+            this.clearAllSelections();
+        }
+        
         // Only start drag from player planets with ships
         if (planet && planet.owner === 'player' && planet.ships > 0) {
-            // Valid drag start
+            // Valid drag start - planet will be highlighted
+            planet.select();
         } else {
             this.inputState.selectedPlanet = null;
         }
@@ -459,6 +662,11 @@ class GameEngine {
      * Reset input state
      */
     resetInputState() {
+        // Deselect planet if it was selected via mouse
+        if (this.inputState.selectedPlanet && !this.keyboardState.selectedPlanet) {
+            this.inputState.selectedPlanet.deselect();
+        }
+        
         this.inputState.mouseDown = false;
         this.inputState.dragStart = null;
         this.inputState.dragCurrent = null;
@@ -517,20 +725,36 @@ class GameEngine {
     handleFleetLaunch(source, target) {
         if (source.owner !== 'player' || source.ships === 0) return;
         
-        // Calculate ships to send based on target capacity
-        let shipsToSend = target.capacity;
+        // Calculate ships to send based on game rules
+        let shipsToSend;
         
-        // If target is neutral or enemy, send exactly target capacity or available ships
-        if (target.owner !== 'player') {
-            shipsToSend = Math.min(target.capacity, source.ships);
+        if (target.owner === 'neutral') {
+            // For neutral planets, send 1 ship to conquer
+            shipsToSend = Math.min(1, source.ships);
+        } else if (target.owner === 'ai') {
+            // For enemy planets, send enough to overcome + buffer
+            shipsToSend = Math.min(target.ships + 1, source.ships);
         } else {
-            // If target is friendly, send ships to fill capacity
+            // For friendly planets, fill to capacity
             const availableSpace = target.capacity - target.ships;
-            shipsToSend = Math.min(availableSpace, source.ships - 1); // Keep at least 1 ship
+            shipsToSend = Math.min(availableSpace, source.ships - 1); // Keep at least 1
         }
         
         if (shipsToSend > 0) {
             this.sendFleet(source, target, shipsToSend, 'player');
+            
+            // Show feedback
+            this.uiController.showNotification(
+                `${shipsToSend} naves enviadas de ${source.getLetter()} a ${target.getLetter()}`,
+                'success',
+                2000
+            );
+        } else {
+            this.uiController.showNotification(
+                'No hay naves suficientes para el ataque',
+                'warning',
+                2000
+            );
         }
     }
 
@@ -593,6 +817,15 @@ class GameEngine {
     }
 
     /**
+     * Handle planet mouse down for drag functionality
+     * @param {Planet} planet - Planet that was clicked
+     * @param {MouseEvent} event - Mouse event
+     */
+    onPlanetMouseDown(planet, event) {
+        // This is handled in the main mouse down handler
+    }
+
+    /**
      * Get current game state
      * @returns {string} Current game state
      */
@@ -650,8 +883,9 @@ class GameEngine {
         this.aiController.reset();
         this.uiController.reset();
         
-        // Reset input state
+        // Reset input states
         this.resetInputState();
+        this.clearAllSelections();
         
         // Reset game state
         this.gameState = 'initializing';
@@ -672,19 +906,10 @@ class GameEngine {
         
         // Regenerate world and restart
         this.generateWorld();
+        this.setupKeyboardMappings();
         this.startGame();
         
         Utils.debugLog('GAME_RESTART', 'Game restarted successfully');
-    }
-
-    /**
-     * Handle planet mouse down for drag functionality
-     * @param {Planet} planet - Planet that was clicked
-     * @param {MouseEvent} event - Mouse event
-     */
-    onPlanetMouseDown(planet, event) {
-        // This method is called by Planet class
-        // Implementation handled in main mouse event handlers
     }
 
     /**
@@ -699,6 +924,11 @@ class GameEngine {
             gameStats: this.gameStats,
             performanceStats: this.performanceStats,
             inputState: this.inputState,
+            keyboardState: {
+                selectedPlanet: this.keyboardState.selectedPlanet ? this.keyboardState.selectedPlanet.getLetter() : null,
+                awaitingTarget: this.keyboardState.awaitingTarget,
+                planetMappings: Array.from(this.keyboardState.planetMap.keys())
+            },
             aiStats: this.aiController ? this.aiController.getStats() : null
         };
     }
@@ -721,6 +951,11 @@ class GameEngine {
         if (this.uiController) {
             this.uiController.destroy();
         }
+        
+        // Remove event listeners
+        document.removeEventListener('keydown', this.onKeyDown);
+        document.removeEventListener('keyup', this.onKeyUp);
+        document.removeEventListener('click', this.onDocumentClick);
         
         Utils.debugLog('GAME_DESTROY', 'Game engine destroyed');
     }
