@@ -1,0 +1,152 @@
+/* ====================================
+   SPACE CONQUEST - MAIN STYLES
+   ==================================== */
+
+/* Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Courier New', 'Consolas', monospace;
+    background: #0a0a1a;
+    color: #ffffff;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* Game Container */
+.game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: radial-gradient(circle at center, #1a1a3a 0%, #0a0a1a 100%);
+    cursor: default;
+}
+
+/* Game Canvas */
+.game-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    z-index: 1;
+}
+
+/* Planet Styles */
+.planet {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.planet:hover {
+    filter: brightness(1.2);
+    transform: scale(1.05);
+}
+
+.planet-selected {
+    stroke: #ffffff;
+    stroke-width: 2;
+    stroke-dasharray: 5,5;
+}
+
+/* Fleet Styles */
+.fleet {
+    fill: #ffffff;
+    opacity: 0.8;
+}
+
+.fleet-player {
+    fill: #00ff88;
+}
+
+.fleet-ai {
+    fill: #ff4444;
+}
+
+/* Connection Lines */
+.connection-line {
+    stroke: rgba(255, 255, 255, 0.3);
+    stroke-width: 1;
+    stroke-dasharray: 2,4;
+    opacity: 0.5;
+}
+
+.drag-line {
+    stroke: #00ff88;
+    stroke-width: 3;
+    stroke-dasharray: 8,4;
+    opacity: 0.8;
+    animation: dashMove 1s linear infinite;
+}
+
+/* Text Styles */
+.planet-text {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: bold;
+    text-anchor: middle;
+    dominant-baseline: central;
+    fill: #ffffff;
+    pointer-events: none;
+}
+
+.planet-capacity-text {
+    font-size: 10px;
+    fill: rgba(255, 255, 255, 0.7);
+}
+
+/* Conquest Progress */
+.conquest-progress {
+    stroke: #ffaa00;
+    stroke-width: 4;
+    fill: none;
+    opacity: 0.8;
+    animation: pulse 1s ease-in-out infinite alternate;
+}
+
+/* Colors */
+.color-player {
+    fill: url(#playerGradient);
+}
+
+.color-ai {
+    fill: url(#aiGradient);
+}
+
+.color-neutral {
+    fill: url(#neutralGradient);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .planet-text {
+        font-size: 12px;
+    }
+    
+    .planet-capacity-text {
+        font-size: 8px;
+    }
+    
+    .ui-overlay {
+        padding: 0 10px;
+        height: 50px;
+    }
+}
+
+@media (max-width: 480px) {
+    .planet-text {
+        font-size: 10px;
+    }
+    
+    .planet-capacity-text {
+        font-size: 7px;
+    }
+}
