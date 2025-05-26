@@ -35,6 +35,7 @@ class Planet {
         
         // Selection state
         this.isSelected = false;
+        this.isHovered = false;
         
         // Conquest state
         this.isBeingConquered = false;
@@ -60,6 +61,14 @@ class Planet {
         this.animationState = 'idle';
         this.pulsePhase = 0;
         
+        // Event handling
+        this.mouseEventHandlers = {
+            mouseenter: this.onMouseEnter.bind(this),
+            mouseleave: this.onMouseLeave.bind(this),
+            mousedown: this.onMouseDown.bind(this),
+            click: this.onClick.bind(this)
+        };
+        
         // Create visual elements
         this.createElement();
     }
@@ -82,7 +91,7 @@ class Planet {
 
         // Create planet group
         this.visualElement = Utils.createSVGElement('g', {
-            'class': 'planet planet-hover',
+            'class': 'planet',
             'data-planet-id': this.getId(),
             'data-planet-letter': this.letter
         });
@@ -149,7 +158,7 @@ class Planet {
         // Add to canvas
         canvas.appendChild(this.visualElement);
 
-        // Add event listeners
+        // Add event listeners with proper binding
         this.addEventListeners();
     }
 
@@ -159,21 +168,20 @@ class Planet {
     addEventListeners() {
         if (!this.visualElement) return;
 
-        // Mouse events for drag functionality
-        this.visualElement.addEventListener('mouseenter', (e) => {
-            this.onMouseEnter(e);
+        // Add all event listeners to the main group element
+        Object.entries(this.mouseEventHandlers).forEach(([event, handler]) => {
+            this.visualElement.addEventListener(event, handler, { passive: false });
         });
+    }
 
-        this.visualElement.addEventListener('mouseleave', (e) => {
-            this.onMouseLeave(e);
-        });
+    /**
+     * Remove event listeners
+     */
+    removeEventListeners() {
+        if (!this.visualElement) return;
 
-        this.visualElement.addEventListener('mousedown', (e) => {
-            this.onMouseDown(e);
-        });
-
-        this.visualElement.addEventListener('click', (e) => {
-            this.onClick(e);
+        Object.entries(this.mouseEventHandlers).forEach(([event, handler]) => {
+            this.visualElement.removeEventListener(event, handler);
         });
     }
 
@@ -181,22 +189,17 @@ class Planet {
      * Handle mouse enter event
      */
     onMouseEnter(event) {
-        // Show tooltip with planet information
-        const tooltip = Utils.getElementById('tooltip');
-        if (tooltip) {
-            const info = this.getTooltipInfo();
-            tooltip.innerHTML = info;
-            tooltip.style.display = 'block';
-            tooltip.className = `tooltip tooltip-${this.owner}`;
-        }
-
-        // Add hover animation
-        this.visualElement.classList.add('planet-hover');
+        // Prevent event bubbling
+        event.stopPropagation();
         
-        // Highlight letter
-        if (this.letterElement) {
-            this.letterElement.setAttribute('opacity', '1.0');
-            this.letterElement.setAttribute('font-size', '16px');
+        this.isHovered = true;
+        
+        // Show tooltip with planet information
+        this.showTooltip(event);
+        
+        // Add hover visual effects only if not already selected
+        if (!this.isSelected) {
+            this.addHoverEffects();
         }
     }
 
@@ -204,19 +207,17 @@ class Planet {
      * Handle mouse leave event
      */
     onMouseLeave(event) {
-        // Hide tooltip
-        const tooltip = Utils.getElementById('tooltip');
-        if (tooltip) {
-            tooltip.style.display = 'none';
-        }
-
-        // Remove hover animation
-        this.visualElement.classList.remove('planet-hover');
+        // Prevent event bubbling
+        event.stopPropagation();
         
-        // Reset letter highlight
-        if (this.letterElement && !this.isSelected) {
-            this.letterElement.setAttribute('opacity', '0.8');
-            this.letterElement.setAttribute('font-size', '14px');
+        this.isHovered = false;
+        
+        // Hide tooltip
+        this.hideTooltip();
+        
+        // Remove hover effects only if not selected
+        if (!this.isSelected) {
+            this.removeHoverEffects();
         }
     }
 
@@ -224,10 +225,16 @@ class Planet {
      * Handle mouse down event (start of potential drag)
      */
     onMouseDown(event) {
-        // Prevent event bubbling
+        // Prevent all event propagation and default behavior
         event.stopPropagation();
+        event.preventDefault();
         
-        // Notify game engine about potential drag start
+        // Only handle left mouse button
+        if (event.button !== 0) return;
+        
+        Utils.debugLog('PLANET_MOUSEDOWN', `Planet ${this.letter} (${this.owner}) clicked, ships: ${this.ships}`);
+        
+        // Notify game engine about mouse down on this planet
         if (window.game && typeof window.game.onPlanetMouseDown === 'function') {
             window.game.onPlanetMouseDown(this, event);
         }
@@ -237,12 +244,93 @@ class Planet {
      * Handle click event for selection
      */
     onClick(event) {
+        // Prevent all event propagation and default behavior
         event.stopPropagation();
+        event.preventDefault();
         
-        // Notify game engine about planet selection
+        Utils.debugLog('PLANET_CLICK', `Planet ${this.letter} clicked for selection`);
+        
+        // Notify game engine about planet click
         if (window.game && typeof window.game.onPlanetClick === 'function') {
             window.game.onPlanetClick(this, event);
         }
+    }
+
+    /**
+     * Show tooltip
+     */
+    showTooltip(event) {
+        const tooltip = Utils.getElementById('tooltip');
+        if (!tooltip) return;
+        
+        const info = this.getTooltipInfo();
+        tooltip.innerHTML = info;
+        tooltip.style.display = 'block';
+        tooltip.className = `tooltip tooltip-${this.owner}`;
+        
+        // Position tooltip away from cursor to avoid interference
+        this.positionTooltip(event);
+    }
+
+    /**
+     * Position tooltip
+     */
+    positionTooltip(event) {
+        const tooltip = Utils.getElementById('tooltip');
+        if (!tooltip) return;
+        
+        // Position tooltip to the right and slightly above the planet
+        const canvasRect = Utils.getElementById('gameCanvas').getBoundingClientRect();
+        let x = this.x + canvasRect.left + this.radius + 20;
+        let y = this.y + canvasRect.top - 20;
+        
+        // Adjust if tooltip would go off screen
+        const tooltipRect = tooltip.getBoundingClientRect();
+        if (x + tooltipRect.width > window.innerWidth) {
+            x = this.x + canvasRect.left - tooltipRect.width - 20;
+        }
+        if (y < 0) {
+            y = this.y + canvasRect.top + this.radius + 20;
+        }
+        
+        tooltip.style.left = `${x}px`;
+        tooltip.style.top = `${y}px`;
+    }
+
+    /**
+     * Hide tooltip
+     */
+    hideTooltip() {
+        const tooltip = Utils.getElementById('tooltip');
+        if (tooltip) {
+            tooltip.style.display = 'none';
+        }
+    }
+
+    /**
+     * Add hover effects
+     */
+    addHoverEffects() {
+        if (this.letterElement) {
+            this.letterElement.setAttribute('opacity', '1.0');
+            this.letterElement.setAttribute('font-size', '16px');
+        }
+        
+        // Add hover class for CSS animations
+        this.visualElement.classList.add('planet-hover');
+    }
+
+    /**
+     * Remove hover effects
+     */
+    removeHoverEffects() {
+        if (this.letterElement) {
+            this.letterElement.setAttribute('opacity', '0.8');
+            this.letterElement.setAttribute('font-size', '14px');
+        }
+        
+        // Remove hover class
+        this.visualElement.classList.remove('planet-hover');
     }
 
     /**
@@ -250,9 +338,12 @@ class Planet {
      */
     select() {
         this.isSelected = true;
+        
+        // Visual selection indicators
         this.planetCircle.setAttribute('stroke', '#ffffff');
         this.planetCircle.setAttribute('stroke-width', '3');
         this.planetCircle.setAttribute('stroke-dasharray', '5,5');
+        this.planetCircle.classList.add('planet-selected-keyboard');
         
         // Highlight letter
         if (this.letterElement) {
@@ -260,6 +351,8 @@ class Planet {
             this.letterElement.setAttribute('font-size', '18px');
             this.letterElement.setAttribute('fill', '#ffff00');
         }
+        
+        Utils.debugLog('PLANET_SELECT', `Planet ${this.letter} selected`);
     }
 
     /**
@@ -267,16 +360,24 @@ class Planet {
      */
     deselect() {
         this.isSelected = false;
+        
+        // Remove selection visuals
         this.planetCircle.setAttribute('stroke', 'none');
         this.planetCircle.setAttribute('stroke-width', CONFIG.PLANET.STROKE_WIDTH);
         this.planetCircle.setAttribute('stroke-dasharray', 'none');
+        this.planetCircle.classList.remove('planet-selected-keyboard');
         
-        // Reset letter
+        // Reset letter appearance
         if (this.letterElement) {
-            this.letterElement.setAttribute('opacity', '0.8');
-            this.letterElement.setAttribute('font-size', '14px');
+            const opacity = this.isHovered ? '1.0' : '0.8';
+            const fontSize = this.isHovered ? '16px' : '14px';
+            
+            this.letterElement.setAttribute('opacity', opacity);
+            this.letterElement.setAttribute('font-size', fontSize);
             this.letterElement.setAttribute('fill', '#ffffff');
         }
+        
+        Utils.debugLog('PLANET_DESELECT', `Planet ${this.letter} deselected`);
     }
 
     /**
@@ -348,9 +449,6 @@ class Planet {
             this.updateOwnerVisuals();
             this.lastOwner = this.owner;
         }
-
-        // Update tooltip position if visible
-        this.updateTooltipPosition();
     }
 
     /**
@@ -489,32 +587,6 @@ class Planet {
     }
 
     /**
-     * Update tooltip position based on mouse
-     */
-    updateTooltipPosition() {
-        const tooltip = Utils.getElementById('tooltip');
-        if (tooltip && tooltip.style.display === 'block') {
-            // Position tooltip near planet but avoid screen edges
-            const rect = tooltip.getBoundingClientRect();
-            const canvasRect = Utils.getElementById('gameCanvas').getBoundingClientRect();
-            
-            let x = this.x + canvasRect.left + 20;
-            let y = this.y + canvasRect.top - 10;
-            
-            // Adjust if tooltip would go off screen
-            if (x + rect.width > window.innerWidth) {
-                x = this.x + canvasRect.left - rect.width - 20;
-            }
-            if (y < 0) {
-                y = this.y + canvasRect.top + 30;
-            }
-            
-            tooltip.style.left = `${x}px`;
-            tooltip.style.top = `${y}px`;
-        }
-    }
-
-    /**
      * Get CSS class for planet color based on owner
      * @returns {string} CSS class name
      */
@@ -590,9 +662,16 @@ class Planet {
      * Destroy planet visual elements
      */
     destroy() {
+        // Remove event listeners first
+        this.removeEventListeners();
+        
+        // Remove from DOM
         if (this.visualElement && this.visualElement.parentNode) {
             this.visualElement.parentNode.removeChild(this.visualElement);
         }
+        
+        // Hide tooltip if it's showing for this planet
+        this.hideTooltip();
     }
 }
 
