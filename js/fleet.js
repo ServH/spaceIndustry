@@ -1,21 +1,35 @@
 /**
  * ====================================
- * SPACE CONQUEST - FLEET CLASS
+ * SPACE CONQUEST - OPTIMIZED FLEET CLASS
  * ====================================
  * 
  * Represents ships in transit between planets.
- * Handles movement, visualization, and arrival logic.
+ * OPTIMIZED: Object pooling, culling, batched updates.
  */
 
 class Fleet {
     /**
-     * Create a new fleet
+     * Create a new fleet (or initialize pooled fleet)
      * @param {Planet} fromPlanet - Source planet
      * @param {Planet} toPlanet - Destination planet
      * @param {number} shipCount - Number of ships in fleet
      * @param {string} owner - Fleet owner ('player' or 'ai')
      */
-    constructor(fromPlanet, toPlanet, shipCount, owner) {
+    constructor(fromPlanet = null, toPlanet = null, shipCount = 0, owner = 'neutral') {
+        // Initialize with default values for pooling
+        this.initialize(fromPlanet, toPlanet, shipCount, owner);
+    }
+
+    /**
+     * Initialize fleet (for object pooling)
+     * @param {Planet} fromPlanet - Source planet
+     * @param {Planet} toPlanet - Destination planet
+     * @param {number} shipCount - Number of ships in fleet
+     * @param {string} owner - Fleet owner ('player' or 'ai')
+     */
+    initialize(fromPlanet, toPlanet, shipCount, owner) {
+        if (!fromPlanet || !toPlanet) return;
+        
         // Basic properties
         this.from = fromPlanet;
         this.to = toPlanet;
@@ -34,7 +48,7 @@ class Fleet {
         this.travelTime = (this.distance / CONFIG.SHIP.SPEED) * 1000; // Convert to milliseconds
         this.angle = Utils.angle(this.x, this.y, this.targetX, this.targetY);
         
-        // Visual elements
+        // Visual elements (will be reused if available)
         this.visualElement = null;
         this.shipElements = [];
         this.connectionLine = null;
@@ -43,16 +57,67 @@ class Fleet {
         this.animationPhase = Math.random() * Math.PI * 2; // Random start phase
         this.hasArrived = false;
         
+        // Performance optimizations
+        this.isVisible = true;
+        this.lastUpdateTime = 0;
+        this.updateInterval = 16; // Target 60fps
+        this.needsVisualUpdate = true;
+        
         // Create visual representation
         this.createElement();
         
-        Utils.debugLog('FLEET_CREATION', `Fleet created: ${shipCount} ships from ${fromPlanet.getId()} to ${toPlanet.getId()}`);
+        Utils.debugLog('FLEET_CREATION', `Fleet initialized: ${shipCount} ships from ${fromPlanet.getId()} to ${toPlanet.getId()}`);
     }
 
     /**
-     * Create visual elements for the fleet
+     * Reset fleet for object pooling
+     */
+    reset() {
+        // Clear references
+        this.from = null;
+        this.to = null;
+        this.ships = 0;
+        this.owner = 'neutral';
+        
+        // Reset position
+        this.x = 0;
+        this.y = 0;
+        this.targetX = 0;
+        this.targetY = 0;
+        this.progress = 0;
+        
+        // Reset state
+        this.hasArrived = false;
+        this.isVisible = false;
+        this.needsVisualUpdate = false;
+        
+        // Hide visual elements instead of destroying them
+        if (this.visualElement) {
+            this.visualElement.style.display = 'none';
+        }
+        if (this.connectionLine) {
+            this.connectionLine.style.display = 'none';
+        }
+        
+        // Clear ship elements array but keep DOM elements for reuse
+        this.shipElements.forEach(ship => {
+            if (ship.element) {
+                ship.element.style.display = 'none';
+            }
+        });
+    }
+
+    /**
+     * Create visual elements for the fleet (OPTIMIZED)
      */
     createElement() {
+        // Try to reuse existing elements first
+        if (this.visualElement) {
+            this.visualElement.style.display = 'block';
+            this.reuseVisualElements();
+            return;
+        }
+
         const canvas = Utils.getElementById('gameCanvas');
         if (!canvas) return;
 
@@ -82,7 +147,41 @@ class Fleet {
     }
 
     /**
-     * Create individual ship visual elements
+     * Reuse existing visual elements (PERFORMANCE OPTIMIZATION)
+     */
+    reuseVisualElements() {
+        // Update connection line
+        if (this.connectionLine) {
+            this.connectionLine.style.display = 'block';
+            this.connectionLine.setAttribute('x1', this.from.x);
+            this.connectionLine.setAttribute('y1', this.from.y);
+            this.connectionLine.setAttribute('x2', this.to.x);
+            this.connectionLine.setAttribute('y2', this.to.y);
+            this.connectionLine.setAttribute('stroke', CONFIG.getOwnerColor(this.owner));
+        }
+
+        // Update ship elements
+        const maxShipsToShow = Math.min(this.ships, 12);
+        for (let i = 0; i < maxShipsToShow && i < this.shipElements.length; i++) {
+            const ship = this.shipElements[i];
+            ship.element.style.display = 'block';
+            ship.element.setAttribute('fill', CONFIG.getOwnerColor(this.owner));
+        }
+
+        // Hide excess ship elements
+        for (let i = maxShipsToShow; i < this.shipElements.length; i++) {
+            this.shipElements[i].element.style.display = 'none';
+        }
+
+        // Update count text if needed
+        if (this.countText) {
+            this.countText.textContent = this.ships.toString();
+            this.countText.style.display = this.ships > maxShipsToShow ? 'block' : 'none';
+        }
+    }
+
+    /**
+     * Create individual ship visual elements (OPTIMIZED)
      */
     createShipElements() {
         const maxShipsToShow = Math.min(this.ships, 12); // Limit visual ships for performance
@@ -153,17 +252,25 @@ class Fleet {
     }
 
     /**
-     * Update fleet position and state
+     * Update fleet position and state (OPTIMIZED)
      * @param {number} deltaTime - Time elapsed since last update (ms)
+     * @param {PerformanceManager} perfManager - Performance manager for culling
      * @returns {boolean} True if fleet has arrived at destination
      */
-    update(deltaTime) {
+    update(deltaTime, perfManager = null) {
         if (this.hasArrived) {
             return true;
         }
 
+        // Performance optimization: Skip update if not enough time has passed
+        this.lastUpdateTime += deltaTime;
+        if (this.lastUpdateTime < this.updateInterval) {
+            return false;
+        }
+
         // Update progress
-        this.progress += deltaTime / this.travelTime;
+        this.progress += this.lastUpdateTime / this.travelTime;
+        this.lastUpdateTime = 0;
         
         if (this.progress >= 1) {
             // Fleet has arrived
@@ -173,17 +280,43 @@ class Fleet {
             return true;
         }
 
-        // Update position
-        this.updatePosition();
-        
-        // Update animations
-        this.updateAnimation(deltaTime);
+        // Performance optimization: Culling check
+        if (perfManager) {
+            const wasVisible = this.isVisible;
+            this.isVisible = perfManager.isInViewport(this, 20);
+            
+            // Show/hide visual elements based on visibility
+            if (this.isVisible !== wasVisible) {
+                this.setVisibility(this.isVisible);
+            }
+        }
+
+        // Only update position and visuals if visible
+        if (this.isVisible) {
+            this.updatePosition();
+            this.updateAnimation(deltaTime);
+        }
         
         return false;
     }
 
     /**
-     * Update fleet position based on progress
+     * Set visibility of fleet elements (PERFORMANCE OPTIMIZATION)
+     * @param {boolean} visible - Whether fleet should be visible
+     */
+    setVisibility(visible) {
+        const display = visible ? 'block' : 'none';
+        
+        if (this.visualElement) {
+            this.visualElement.style.display = display;
+        }
+        if (this.connectionLine) {
+            this.connectionLine.style.display = display;
+        }
+    }
+
+    /**
+     * Update fleet position based on progress (OPTIMIZED)
      */
     updatePosition() {
         // Smooth interpolation between start and end positions
@@ -192,8 +325,8 @@ class Fleet {
         this.x = Utils.lerp(this.from.x, this.to.x, smoothProgress);
         this.y = Utils.lerp(this.from.y, this.to.y, smoothProgress);
         
-        // Update visual elements
-        this.updateVisualPosition();
+        // Mark for visual update
+        this.needsVisualUpdate = true;
     }
 
     /**
@@ -206,11 +339,15 @@ class Fleet {
     }
 
     /**
-     * Update visual position of fleet elements
+     * Update visual position of fleet elements (BATCHED)
      */
     updateVisualPosition() {
+        if (!this.needsVisualUpdate || !this.isVisible) return;
+        
         // Update each ship element
         this.shipElements.forEach((ship, index) => {
+            if (ship.element.style.display === 'none') return;
+            
             // Calculate position with formation offset and floating animation
             const floatOffset = Math.sin(this.animationPhase + ship.phase) * 2;
             
@@ -226,10 +363,12 @@ class Fleet {
             this.countText.setAttribute('x', this.x);
             this.countText.setAttribute('y', this.y - 15);
         }
+        
+        this.needsVisualUpdate = false;
     }
 
     /**
-     * Update animations
+     * Update animations (OPTIMIZED)
      * @param {number} deltaTime - Time elapsed since last update (ms)
      */
     updateAnimation(deltaTime) {
@@ -239,6 +378,9 @@ class Fleet {
         if (this.animationPhase > Math.PI * 4) {
             this.animationPhase -= Math.PI * 4;
         }
+        
+        // Update visual position if needed
+        this.updateVisualPosition();
     }
 
     /**
@@ -248,8 +390,10 @@ class Fleet {
         Utils.debugLog('FLEET_ARRIVAL', `Fleet arrived at ${this.to.getId()} with ${this.ships} ships`);
         
         // Add arrival animation
-        this.visualElement.classList.remove('fleet-moving');
-        this.visualElement.classList.add('fleet-arriving');
+        if (this.visualElement) {
+            this.visualElement.classList.remove('fleet-moving');
+            this.visualElement.classList.add('fleet-arriving');
+        }
         
         // Handle conquest/battle logic
         if (this.to.owner === 'neutral') {
@@ -297,10 +441,11 @@ class Fleet {
             id: this.getId(),
             owner: this.owner,
             ships: this.ships,
-            from: this.from.getId(),
-            to: this.to.getId(),
+            from: this.from ? this.from.getId() : 'none',
+            to: this.to ? this.to.getId() : 'none',
             progress: this.progress,
-            eta: this.getETA()
+            eta: this.getETA(),
+            isVisible: this.isVisible
         };
     }
 
@@ -318,7 +463,7 @@ class Fleet {
      * @returns {string} Fleet ID
      */
     getId() {
-        return `fleet_${this.from.getId()}_${this.to.getId()}_${Date.now()}`;
+        return `fleet_${this.from ? this.from.getId() : 'none'}_${this.to ? this.to.getId() : 'none'}_${Date.now()}`;
     }
 
     /**
@@ -348,23 +493,15 @@ class Fleet {
     }
 
     /**
-     * Destroy fleet visual elements
+     * Destroy fleet visual elements (OPTIMIZED FOR POOLING)
      */
     destroy() {
-        // Remove visual elements
-        if (this.visualElement && this.visualElement.parentNode) {
-            this.visualElement.parentNode.removeChild(this.visualElement);
-        }
+        // Instead of removing elements, hide them for reuse
+        this.setVisibility(false);
         
-        if (this.connectionLine && this.connectionLine.parentNode) {
-            this.connectionLine.parentNode.removeChild(this.connectionLine);
-        }
-        
-        // Clear references
-        this.shipElements = [];
-        this.visualElement = null;
-        this.connectionLine = null;
-        this.countText = null;
+        // Mark as not needing updates
+        this.needsVisualUpdate = false;
+        this.isVisible = false;
         
         Utils.debugLog('FLEET_DESTRUCTION', `Fleet ${this.getId()} destroyed`);
     }
