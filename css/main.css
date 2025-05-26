@@ -29,7 +29,7 @@ body {
     cursor: default;
 }
 
-/* Game Canvas */
+/* Game Canvas - RTS OPTIMIZED */
 .game-canvas {
     position: absolute;
     top: 0;
@@ -38,15 +38,28 @@ body {
     height: 100%;
     cursor: crosshair;
     z-index: 1;
+    /* Prevent text selection during drag */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    /* Improve touch/drag on mobile */
+    touch-action: none;
 }
 
-/* Planet Styles */
+/* Cursor states for RTS experience */
+.game-canvas.dragging {
+    cursor: grabbing !important;
+}
+
+/* Planet Styles - NO INTERFERENCE WITH CANVAS EVENTS */
 .planet {
-    cursor: pointer;
+    /* Remove cursor pointer to prevent conflicts */
+    pointer-events: none;
     transition: all 0.2s ease;
 }
 
-.planet:hover {
+.planet-hover {
     filter: brightness(1.2);
     transform: scale(1.05);
 }
@@ -61,6 +74,7 @@ body {
 .fleet {
     fill: #ffffff;
     opacity: 0.8;
+    pointer-events: none;
 }
 
 .fleet-player {
@@ -77,17 +91,30 @@ body {
     stroke-width: 1;
     stroke-dasharray: 2,4;
     opacity: 0.5;
+    pointer-events: none;
 }
 
+/* Drag Line - IMPROVED RTS STYLE */
 .drag-line {
     stroke: #00ff88;
     stroke-width: 3;
     stroke-dasharray: 8,4;
-    opacity: 0.8;
+    opacity: 0.9;
+    pointer-events: none;
+    filter: drop-shadow(0 0 4px #00ff88);
     animation: dashMove 1s linear infinite;
 }
 
-/* Text Styles */
+@keyframes dashMove {
+    0% {
+        stroke-dashoffset: 0;
+    }
+    100% {
+        stroke-dashoffset: 12;
+    }
+}
+
+/* Text Styles - ALL POINTER EVENTS DISABLED */
 .planet-text {
     font-family: 'Courier New', monospace;
     font-size: 14px;
@@ -116,7 +143,8 @@ body {
     transition: all 0.2s ease;
 }
 
-.planet-letter-text:hover {
+/* Hover effects applied programmatically, not via CSS :hover */
+.planet-letter-hover {
     opacity: 1.0;
     font-size: 16px;
 }
@@ -127,7 +155,17 @@ body {
     stroke-width: 4;
     fill: none;
     opacity: 0.8;
+    pointer-events: none;
     animation: pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 0.6;
+    }
+    100% {
+        opacity: 1.0;
+    }
 }
 
 /* Colors */
@@ -158,6 +196,40 @@ body {
     animation: targetPulse 0.5s ease-in-out infinite alternate;
 }
 
+/* Battle Effects */
+.planet-battle {
+    animation: battleShake 0.3s ease-in-out infinite;
+}
+
+@keyframes battleShake {
+    0%, 100% {
+        transform: translate(0, 0);
+    }
+    25% {
+        transform: translate(-1px, -1px);
+    }
+    75% {
+        transform: translate(1px, 1px);
+    }
+}
+
+/* Conquest Effects */
+.planet-conquered {
+    animation: conquestFlash 0.5s ease-out;
+}
+
+@keyframes conquestFlash {
+    0% {
+        filter: brightness(1);
+    }
+    50% {
+        filter: brightness(2) saturate(2);
+    }
+    100% {
+        filter: brightness(1);
+    }
+}
+
 /* Selection animations */
 @keyframes selectionPulse {
     0% {
@@ -179,6 +251,16 @@ body {
     }
 }
 
+/* Tooltip improvements - prevent interference */
+.tooltip {
+    pointer-events: none !important;
+    z-index: 1000;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .planet-text {
@@ -197,6 +279,11 @@ body {
         padding: 0 10px;
         height: 50px;
     }
+    
+    /* Improve touch experience */
+    .game-canvas {
+        touch-action: pan-x pan-y;
+    }
 }
 
 @media (max-width: 480px) {
@@ -210,5 +297,10 @@ body {
     
     .planet-letter-text {
         font-size: 10px;
+    }
+    
+    /* Larger hit areas for mobile */
+    .drag-line {
+        stroke-width: 4;
     }
 }
