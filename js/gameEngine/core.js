@@ -18,6 +18,11 @@ class GameEngineCore {
         this.aiController = null;
         this.uiController = null;
         
+        // Canvas reference
+        this.canvas = null;
+        this.canvasWidth = 0;
+        this.canvasHeight = 0;
+        
         // Game statistics
         this.gameStats = {
             gameStartTime: 0,
@@ -64,6 +69,15 @@ class GameEngineCore {
         canvas.setAttribute('width', this.canvasWidth);
         canvas.setAttribute('height', this.canvasHeight);
         canvas.setAttribute('viewBox', `0 0 ${this.canvasWidth} ${this.canvasHeight}`);
+    }
+
+    // WORLD GENERATION - Default implementation, overridden by modules
+    generateWorld() {
+        Utils.debugLog('CORE', 'Default world generation - should be overridden by module');
+    }
+
+    setupKeyboardMappings() {
+        Utils.debugLog('CORE', 'Default keyboard setup - should be overridden by module');
     }
 
     // GAME LOOP
@@ -156,6 +170,11 @@ class GameEngineCore {
             this.gameLoopId = null;
         }
         
+        // Reset any input states if modules exist
+        if (this.inputHandler) {
+            this.inputHandler.reset();
+        }
+        
         this.uiController.showGameOverModal(result, this.gameStats);
     }
 
@@ -194,6 +213,11 @@ class GameEngineCore {
         this.aiController.reset();
         this.uiController.reset();
         
+        // Reset input handlers if they exist
+        if (this.inputHandler) {
+            this.inputHandler.reset();
+        }
+        
         this.gameState = 'initializing';
         this.lastUpdateTime = 0;
         
@@ -226,6 +250,38 @@ class GameEngineCore {
         if (this.uiController) {
             this.uiController.destroy();
         }
+        
+        // Reset input handlers if they exist
+        if (this.inputHandler) {
+            this.inputHandler.reset();
+        }
+    }
+
+    // DEBUG INFO
+    getDebugInfo() {
+        return {
+            gameState: this.gameState,
+            planetsCount: this.planets.length,
+            fleetsCount: this.fleets.length,
+            gameStats: this.gameStats
+        };
+    }
+
+    // DEFAULT IMPLEMENTATIONS FOR COMPATIBILITY
+    handleFleetLaunch(source, target) {
+        Utils.debugLog('CORE', 'Default fleet launch - should be overridden by module');
+    }
+
+    sendFleet(source, target, ships, owner) {
+        Utils.debugLog('CORE', 'Default send fleet - should be overridden by module');
+    }
+
+    onPlanetClick(planet, event) {
+        Utils.debugLog('CORE', 'Default planet click - should be overridden by module');
+    }
+
+    onPlanetMouseDown(planet, event) {
+        Utils.debugLog('CORE', 'Default planet mouse down - should be overridden by module');
     }
 }
 
