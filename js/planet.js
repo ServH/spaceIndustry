@@ -5,6 +5,7 @@
  * 
  * Represents a planet in the game with ship generation,
  * conquest mechanics, and visual representation.
+ * UPDATED: Mouse events removed to prevent tooltip/drag conflicts
  */
 
 class Planet {
@@ -61,15 +62,7 @@ class Planet {
         this.animationState = 'idle';
         this.pulsePhase = 0;
         
-        // Event handling
-        this.mouseEventHandlers = {
-            mouseenter: this.onMouseEnter.bind(this),
-            mouseleave: this.onMouseLeave.bind(this),
-            mousedown: this.onMouseDown.bind(this),
-            click: this.onClick.bind(this)
-        };
-        
-        // Create visual elements
+        // Create visual elements (NO MORE MOUSE EVENTS)
         this.createElement();
     }
 
@@ -84,6 +77,7 @@ class Planet {
 
     /**
      * Create SVG visual elements for the planet
+     * NO MOUSE EVENT LISTENERS - All handled by GameEngine canvas events
      */
     createElement() {
         const canvas = Utils.getElementById('gameCanvas');
@@ -102,7 +96,8 @@ class Planet {
             cy: this.y,
             r: this.radius,
             'class': this.getColorClass(),
-            'stroke-width': CONFIG.PLANET.STROKE_WIDTH
+            'stroke-width': CONFIG.PLANET.STROKE_WIDTH,
+            'pointer-events': 'none'  // Prevent interference with canvas events
         });
 
         // Create conquest progress circle (hidden initially)
@@ -113,7 +108,8 @@ class Planet {
             'class': 'conquest-progress',
             fill: 'none',
             'stroke-dasharray': `0 ${2 * Math.PI * (this.radius + 5)}`,
-            style: 'display: none'
+            style: 'display: none',
+            'pointer-events': 'none'
         });
 
         // Create ship count text
@@ -122,7 +118,8 @@ class Planet {
             y: this.y,
             'class': 'planet-text',
             'text-anchor': 'middle',
-            'dominant-baseline': 'central'
+            'dominant-baseline': 'central',
+            'pointer-events': 'none'
         });
         this.textElement.textContent = this.ships.toString();
 
@@ -131,7 +128,8 @@ class Planet {
             x: this.x,
             y: this.y + this.radius + 15,
             'class': 'planet-capacity-text',
-            'text-anchor': 'middle'
+            'text-anchor': 'middle',
+            'pointer-events': 'none'
         });
         this.capacityTextElement.textContent = `[${this.capacity}]`;
 
@@ -144,7 +142,8 @@ class Planet {
             'font-size': '14px',
             'font-weight': 'bold',
             'fill': '#ffffff',
-            'opacity': '0.8'
+            'opacity': '0.8',
+            'pointer-events': 'none'
         });
         this.letterElement.textContent = this.letter;
 
@@ -157,153 +156,20 @@ class Planet {
 
         // Add to canvas
         canvas.appendChild(this.visualElement);
-
-        // Add event listeners with proper binding
-        this.addEventListeners();
+        
+        // NO EVENT LISTENERS - All mouse handling done in GameEngine
     }
 
     /**
-     * Add event listeners for planet interaction
+     * Visual hover effects (called from GameEngine)
      */
-    addEventListeners() {
-        if (!this.visualElement) return;
-
-        // Add all event listeners to the main group element
-        Object.entries(this.mouseEventHandlers).forEach(([event, handler]) => {
-            this.visualElement.addEventListener(event, handler, { passive: false });
-        });
-    }
-
-    /**
-     * Remove event listeners
-     */
-    removeEventListeners() {
-        if (!this.visualElement) return;
-
-        Object.entries(this.mouseEventHandlers).forEach(([event, handler]) => {
-            this.visualElement.removeEventListener(event, handler);
-        });
-    }
-
-    /**
-     * Handle mouse enter event
-     */
-    onMouseEnter(event) {
-        // Prevent event bubbling
-        event.stopPropagation();
+    setHoverState(isHovered) {
+        this.isHovered = isHovered;
         
-        this.isHovered = true;
-        
-        // Show tooltip with planet information
-        this.showTooltip(event);
-        
-        // Add hover visual effects only if not already selected
-        if (!this.isSelected) {
+        if (isHovered && !this.isSelected) {
             this.addHoverEffects();
-        }
-    }
-
-    /**
-     * Handle mouse leave event
-     */
-    onMouseLeave(event) {
-        // Prevent event bubbling
-        event.stopPropagation();
-        
-        this.isHovered = false;
-        
-        // Hide tooltip
-        this.hideTooltip();
-        
-        // Remove hover effects only if not selected
-        if (!this.isSelected) {
+        } else if (!isHovered && !this.isSelected) {
             this.removeHoverEffects();
-        }
-    }
-
-    /**
-     * Handle mouse down event (start of potential drag)
-     */
-    onMouseDown(event) {
-        // Prevent all event propagation and default behavior
-        event.stopPropagation();
-        event.preventDefault();
-        
-        // Only handle left mouse button
-        if (event.button !== 0) return;
-        
-        Utils.debugLog('PLANET_MOUSEDOWN', `Planet ${this.letter} (${this.owner}) clicked, ships: ${this.ships}`);
-        
-        // Notify game engine about mouse down on this planet
-        if (window.game && typeof window.game.onPlanetMouseDown === 'function') {
-            window.game.onPlanetMouseDown(this, event);
-        }
-    }
-
-    /**
-     * Handle click event for selection
-     */
-    onClick(event) {
-        // Prevent all event propagation and default behavior
-        event.stopPropagation();
-        event.preventDefault();
-        
-        Utils.debugLog('PLANET_CLICK', `Planet ${this.letter} clicked for selection`);
-        
-        // Notify game engine about planet click
-        if (window.game && typeof window.game.onPlanetClick === 'function') {
-            window.game.onPlanetClick(this, event);
-        }
-    }
-
-    /**
-     * Show tooltip
-     */
-    showTooltip(event) {
-        const tooltip = Utils.getElementById('tooltip');
-        if (!tooltip) return;
-        
-        const info = this.getTooltipInfo();
-        tooltip.innerHTML = info;
-        tooltip.style.display = 'block';
-        tooltip.className = `tooltip tooltip-${this.owner}`;
-        
-        // Position tooltip away from cursor to avoid interference
-        this.positionTooltip(event);
-    }
-
-    /**
-     * Position tooltip
-     */
-    positionTooltip(event) {
-        const tooltip = Utils.getElementById('tooltip');
-        if (!tooltip) return;
-        
-        // Position tooltip to the right and slightly above the planet
-        const canvasRect = Utils.getElementById('gameCanvas').getBoundingClientRect();
-        let x = this.x + canvasRect.left + this.radius + 20;
-        let y = this.y + canvasRect.top - 20;
-        
-        // Adjust if tooltip would go off screen
-        const tooltipRect = tooltip.getBoundingClientRect();
-        if (x + tooltipRect.width > window.innerWidth) {
-            x = this.x + canvasRect.left - tooltipRect.width - 20;
-        }
-        if (y < 0) {
-            y = this.y + canvasRect.top + this.radius + 20;
-        }
-        
-        tooltip.style.left = `${x}px`;
-        tooltip.style.top = `${y}px`;
-    }
-
-    /**
-     * Hide tooltip
-     */
-    hideTooltip() {
-        const tooltip = Utils.getElementById('tooltip');
-        if (tooltip) {
-            tooltip.style.display = 'none';
         }
     }
 
@@ -662,16 +528,10 @@ class Planet {
      * Destroy planet visual elements
      */
     destroy() {
-        // Remove event listeners first
-        this.removeEventListeners();
-        
         // Remove from DOM
         if (this.visualElement && this.visualElement.parentNode) {
             this.visualElement.parentNode.removeChild(this.visualElement);
         }
-        
-        // Hide tooltip if it's showing for this planet
-        this.hideTooltip();
     }
 }
 
