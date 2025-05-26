@@ -1,11 +1,11 @@
 /**
  * ====================================
- * SPACE CONQUEST - PLANET CLASS
+ * SPACE CONQUEST - OPTIMIZED PLANET CLASS
  * ====================================
  * 
  * Represents a planet in the game with ship generation,
  * conquest mechanics, and visual representation.
- * UPDATED: Mouse events removed to prevent tooltip/drag conflicts
+ * FIXED: Unique letter assignment system
  */
 
 class Planet {
@@ -15,8 +15,9 @@ class Planet {
      * @param {number} y - Y coordinate
      * @param {number} capacity - Maximum ships the planet can hold
      * @param {string} owner - Initial owner ('player', 'ai', 'neutral')
+     * @param {string} assignedLetter - Pre-assigned unique letter (optional)
      */
-    constructor(x, y, capacity, owner = 'neutral') {
+    constructor(x, y, capacity, owner = 'neutral', assignedLetter = null) {
         // Position and basic properties
         this.x = x;
         this.y = y;
@@ -24,8 +25,8 @@ class Planet {
         this.ships = 0;
         this.owner = owner;
         
-        // Assign random letter for keyboard shortcuts
-        this.letter = this.generateRandomLetter();
+        // Assign unique letter (either provided or generated)
+        this.letter = assignedLetter || this.generateRandomLetter();
         
         // Visual properties
         this.radius = CONFIG.getPlanetRadius(capacity);
@@ -67,12 +68,25 @@ class Planet {
     }
 
     /**
-     * Generate random letter for planet identification
+     * Generate random letter for planet identification (FALLBACK ONLY)
+     * This should not be used when letters are managed centrally
      * @returns {string} Random letter A-Z
      */
     generateRandomLetter() {
         const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
         return letters[Math.floor(Math.random() * letters.length)];
+    }
+
+    /**
+     * Set the planet's unique letter (called by GameEngine)
+     * @param {string} letter - Unique letter to assign
+     */
+    setLetter(letter) {
+        this.letter = letter;
+        if (this.letterElement) {
+            this.letterElement.textContent = letter;
+        }
+        Utils.debugLog('PLANET_LETTER', `Planet at (${this.x}, ${this.y}) assigned letter: ${letter}`);
     }
 
     /**
